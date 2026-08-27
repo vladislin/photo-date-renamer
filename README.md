@@ -5,6 +5,7 @@ A safe Windows desktop application that scans photos and videos, reads their cre
 ## Features
 
 - Preview before changing anything.
+- Readable rich-text preview with color-coded statuses.
 - Copy or move modes.
 - EXIF dates from JPEG, PNG and HEIC images.
 - QuickTime/MOV container creation dates.
@@ -20,12 +21,21 @@ A safe Windows desktop application that scans photos and videos, reads their cre
 go run ./cmd/renamer
 ```
 
-## Test
+Preview status colors adapt to the active light or dark theme:
+
+- `READY` and `SUCCESS` — green.
+- `UNPROCESSED` — orange.
+- `SKIPPED` — gray.
+- `ERROR` — red.
+
+## Verify changes
 
 ```shell
-go test ./...
 go vet ./...
+go build ./cmd/renamer
 ```
+
+After building, run the application and check the changed workflow manually with the sample media folder in Preview mode.
 
 ## Build for Windows 11
 

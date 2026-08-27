@@ -3,11 +3,11 @@ package ui
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"photo-date-renamer/internal/model"
@@ -22,7 +22,7 @@ type App struct {
 	cancel     context.CancelFunc
 	pathEntry  *widget.Entry
 	mode       *widget.RadioGroup
-	output     *widget.Entry
+	output     *widget.RichText
 	progress   *widget.ProgressBar
 	status     *widget.Label
 	chooseBtn  *widget.Button
@@ -61,9 +61,9 @@ func (application *App) build() {
 	})
 	application.mode.Horizontal = true
 	application.mode.SetSelected("Preview")
-	application.output = widget.NewMultiLineEntry()
-	application.output.Disable()
+	application.output = widget.NewRichText()
 	application.output.Wrapping = fyne.TextWrapWord
+	application.output.Scroll = fyne.ScrollVerticalOnly
 	application.progress = widget.NewProgressBar()
 	application.status = widget.NewLabel("Choose a folder to begin.")
 	application.scanButton = widget.NewButton("Scan", application.scan)
@@ -85,7 +85,7 @@ func (application *App) chooseFolder() {
 		application.path = uri.Path()
 		application.pathEntry.SetText(application.path)
 		application.results = nil
-		application.output.SetText("")
+		application.clearOutput()
 		application.status.SetText("Folder selected. Click Scan to preview changes.")
 		application.refreshRunButton()
 	}, application.window)
@@ -100,7 +100,7 @@ func (application *App) scan() {
 	ctx, cancel := context.WithCancel(context.Background())
 	application.cancel = cancel
 	application.setBusy(true, "Scanning files…")
-	application.output.SetText("")
+	application.clearOutput()
 
 	go func() {
 		results, err := processor.Plan(ctx, application.path)
@@ -115,7 +115,7 @@ func (application *App) scan() {
 				return
 			}
 			application.results = results
-			application.output.SetText(formatResults(results))
+			application.showResults(results)
 			application.status.SetText(formatSummary("Preview ready", model.Summarize(results)))
 			application.refreshRunButton()
 		})
@@ -152,7 +152,7 @@ func (application *App) execute() {
 				application.cancel = nil
 				application.setBusy(false, "")
 				application.results = results
-				application.output.SetText(formatResults(results))
+				application.showResults(results)
 				if err != nil {
 					application.status.SetText("Operation stopped with an error.")
 					if err != context.Canceled {
@@ -220,24 +220,70 @@ func actionableCount(results []model.Result) int {
 	return count
 }
 
-func formatResults(results []model.Result) string {
+func (application *App) clearOutput() {
+	application.output.Segments = nil
+	application.output.Refresh()
+}
+
+func (application *App) showResults(results []model.Result) {
+	application.output.Segments = resultSegments(results)
+	application.output.Refresh()
+}
+
+func resultSegments(results []model.Result) []widget.RichTextSegment {
 	if len(results) == 0 {
-		return "No files found."
+		return []widget.RichTextSegment{bodySegment("No files found.")}
 	}
-	var output strings.Builder
+	segments := make([]widget.RichTextSegment, 0, len(results)*2)
 	for _, result := range results {
+		segments = append(segments, statusSegment(result.Status))
 		switch result.Status {
 		case model.StatusReady, model.StatusSuccess:
-			fmt.Fprintf(&output, "%s | %-9s | %s\n    → %s\n", result.Status, result.DateSource, result.SourcePath, result.DestinationPath)
+			segments = append(segments, bodySegment(fmt.Sprintf(" | %-9s | %s\n    → %s\n", result.DateSource, result.SourcePath, result.DestinationPath)))
 		case model.StatusUnprocessed:
-			fmt.Fprintf(&output, "%s | %s\n    → %s\n", result.Status, result.SourcePath, result.DestinationPath)
+			segments = append(segments, bodySegment(fmt.Sprintf(" | %s\n    → %s\n", result.SourcePath, result.DestinationPath)))
 		case model.StatusError:
-			fmt.Fprintf(&output, "%s | %s | %v\n", result.Status, result.SourcePath, result.Err)
+			segments = append(segments, bodySegment(fmt.Sprintf(" | %s | %v\n", result.SourcePath, result.Err)))
 		case model.StatusSkipped:
-			fmt.Fprintf(&output, "%s | %s\n", result.Status, result.SourcePath)
+			segments = append(segments, bodySegment(fmt.Sprintf(" | %s\n", result.SourcePath)))
 		}
 	}
-	return output.String()
+	return segments
+}
+
+func statusSegment(status model.Status) *widget.TextSegment {
+	colorName := theme.ColorNameForeground
+	switch status {
+	case model.StatusReady, model.StatusSuccess:
+		colorName = theme.ColorNameSuccess
+	case model.StatusUnprocessed:
+		colorName = theme.ColorNameWarning
+	case model.StatusSkipped:
+		colorName = theme.ColorNamePlaceHolder
+	case model.StatusError:
+		colorName = theme.ColorNameError
+	}
+	return &widget.TextSegment{
+		Style: widget.RichTextStyle{
+			ColorName: colorName,
+			Inline:    true,
+			SizeName:  theme.SizeNameText,
+			TextStyle: fyne.TextStyle{Bold: true, Monospace: true},
+		},
+		Text: string(status),
+	}
+}
+
+func bodySegment(text string) *widget.TextSegment {
+	return &widget.TextSegment{
+		Style: widget.RichTextStyle{
+			ColorName: theme.ColorNameForeground,
+			Inline:    true,
+			SizeName:  theme.SizeNameText,
+			TextStyle: fyne.TextStyle{Monospace: true},
+		},
+		Text: text,
+	}
 }
 
 func formatSummary(prefix string, summary model.Summary) string {
