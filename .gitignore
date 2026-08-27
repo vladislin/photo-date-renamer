@@ -1,0 +1,5 @@
+/dist/
+/PhotoDateRenamer
+/PhotoDateRenamer.exe
+*.log
+.DS_Store
